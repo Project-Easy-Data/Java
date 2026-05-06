@@ -35,7 +35,8 @@ public class ExcelService {
     }
 
     public void processar(InputStream inputStream) throws Exception {
-        log.info("Iniciando leitura da planilha");
+        log.info("Iniciando leitura da planilha (modo streaming)...");
+
 
         OPCPackage pkg = OPCPackage.open(inputStream);
         try {
@@ -45,16 +46,19 @@ public class ExcelService {
             PlanilhaHandler handler = new PlanilhaHandler(textos);
             parser.setContentHandler(handler);
 
+
             InputStream sheetData = reader.getSheetsData().next();
             parser.parse(new InputSource(sheetData));
             sheetData.close();
 
-//            handler.salvarLoteFinal();
-//            log.info("Fim da planilha. Registros inseridos: {}", handler.getTotal());
+
+            handler.salvarLoteFinal();
+            log.info("Fim da planilha. Registros inseridos: {}", handler.getTotal());
         } finally {
             pkg.close();
         }
     }
+
 
     private class PlanilhaHandler extends DefaultHandler {
         private final SharedStrings textos;
@@ -84,6 +88,7 @@ public class ExcelService {
 
         @Override
         public void characters(char[] ch, int start, int length) {
+
             valorCelula += new String(ch, start, length);
         }
 
@@ -94,6 +99,7 @@ public class ExcelService {
                     int idx = Integer.parseInt(valorCelula);
                     valorCelula = textos.getItemAt(idx).toString();
                 }
+
                 if (indiceColuna >= 0 && indiceColuna < 13) {
                     linhaAtual[indiceColuna] = valorCelula;
                 }
@@ -131,14 +137,16 @@ public class ExcelService {
             }
             jdbc.batchUpdate(sql, batch);
             totalInserido += lote.size();
-            log.info("Lote inserido. Total de linhas: {}", totalInserido);
+            log.info("Lote inserido. Total até agora: {}", totalInserido);
+            lote.clear();
         }
 
-//        void salvarLoteFinal() {
-//            if (!lote.isEmpty()) {
-//                salvarLote();
-//            }
-//        }
+
+        void salvarLoteFinal() {
+            if (!lote.isEmpty()) {
+                salvarLote();
+            }
+        }
 
         private int parseInt(String s) {
             try { return Integer.parseInt(s.trim()); } catch (Exception e) { return 0; }
