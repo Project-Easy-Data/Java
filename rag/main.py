@@ -3,49 +3,44 @@ import shutil
 from pathlib import Path
 
 from fastapi import FastAPI
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from fastapi.middleware.cors import CORSMiddleware
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import Chroma
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY"] = "False"
 
 app = FastAPI()
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", os.getenv("OLLAMA_HOST", "http://ollama:11434"))
-OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "mxbai-embed-large")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 OLLAMA_CHAT_MODEL = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2:1b")
 CHROMA_DIR = os.getenv("CHROMA_DIR", "./db_local")
+RAG_DOCUMENTOS = os.getenv("RAG_DOCUMENTOS", "DocumentacaoGrupo2_atualizada.pdf")
 RECRIAR_DB = os.getenv("RAG_RECRIAR_DB", "true").lower() == "true"
 
-qa_chain = None
+vector_db = None
+llm = None
 documentos_carregados = []
 total_chunks = 0
+todos_chunks = []
 
 
 def listar_documentos():
-    documentos_env = os.getenv("RAG_DOCUMENTOS", "").strip()
-
-    if documentos_env:
-        return [Path(nome.strip()) for nome in documentos_env.split(",") if nome.strip()]
-
-    preferidos = [
-        Path("DocumentacaoGrupo2_atualizada.pdf"),
-        Path("documentacao.pdf"),
-        Path("documento2.pdf"),
-    ]
-
-    encontrados = [arquivo for arquivo in preferidos if arquivo.exists()]
-    if encontrados:
-        return encontrados
-
-    return sorted(Path(".").glob("*.pdf"))
+    return [Path(nome.strip()) for nome in RAG_DOCUMENTOS.split(",") if nome.strip()]
 
 
-def carregar_pdfs():
+def carregar_documentos():
     documentos = []
 
     for caminho in listar_documentos():
@@ -58,33 +53,35 @@ def carregar_pdfs():
         paginas = loader.load()
 
         for pagina in paginas:
-            pagina.metadata["arquivo"] = caminho.name
-            pagina.metadata["pagina"] = pagina.metadata.get("page", 0) + 1
+            if pagina.page_content and pagina.page_content.strip():
+                pagina.metadata["arquivo"] = caminho.name
+                pagina.metadata["pagina"] = pagina.metadata.get("page", 0) + 1
+                documentos.append(pagina)
 
-        documentos.extend(paginas)
         documentos_carregados.append(caminho.name)
 
     return documentos
 
 
-def montar_rag():
-    global qa_chain, total_chunks
+def iniciar_rag():
+    global vector_db, llm, total_chunks, todos_chunks
 
     print(">>> Iniciando RAG EasyData com Ollama <<<")
 
-    documentos = carregar_pdfs()
+    documentos = carregar_documentos()
+
     if not documentos:
-        print("ERRO: nenhum documento PDF foi carregado.")
+        print("ERRO: nenhum documento foi carregado.")
         return
 
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=180,
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=250,
+        chunk_overlap=30,
         separators=["\n\n", "\n", ".", "!", "?", ";", ",", " ", ""],
-        add_start_index=True,
     )
 
-    chunks = text_splitter.split_documents(documentos)
+    chunks = splitter.split_documents(documentos)
+    todos_chunks = chunks
     total_chunks = len(chunks)
 
     if RECRIAR_DB and Path(CHROMA_DIR).exists():
@@ -99,12 +96,6 @@ def montar_rag():
         base_url=OLLAMA_BASE_URL,
     )
 
-    llm = ChatOllama(
-        model=OLLAMA_CHAT_MODEL,
-        base_url=OLLAMA_BASE_URL,
-        temperature=0.2,
-    )
-
     vector_db = Chroma.from_documents(
         documents=chunks,
         embedding=embeddings,
@@ -112,40 +103,225 @@ def montar_rag():
         collection_name="easydata_documentacao",
     )
 
-    retriever = vector_db.as_retriever(
-        search_type="mmr",
-        search_kwargs={
-            "k": 5,
-            "fetch_k": 20,
-        },
+    llm = ChatOllama(
+        model=OLLAMA_CHAT_MODEL,
+        base_url=OLLAMA_BASE_URL,
+        temperature=0.2,
     )
-
-    prompt = ChatPromptTemplate.from_template("""
-Voce e o Assistente EasyData, chatbot do site institucional da EasyData.
-
-Use somente as informacoes do contexto fornecido.
-Responda em portugues do Brasil, de forma clara, direta e amigavel.
-Se a resposta nao estiver no contexto, diga: "Nao encontrei essa informacao na documentacao do projeto."
-Nao invente dados, integrantes, numeros, tecnologias, resultados ou promessas.
-Quando a pergunta for ampla, resuma primeiro e depois detalhe em poucos topicos.
-
-Contexto:
-{context}
-
-Pergunta:
-{input}
-
-Resposta:
-""")
-
-    combine_docs_chain = create_stuff_documents_chain(llm, prompt)
-    qa_chain = create_retrieval_chain(retriever, combine_docs_chain)
 
     print("--- TUDO PRONTO: Sistema de busca ativo! ---")
 
 
+def expandir_pergunta(pergunta):
+    pergunta_lower = pergunta.lower()
+
+    mapa = {
+        "easydata projeto": [
+            "EasyData Inteligencia Urbana em Saneamento",
+            "descricao do projeto",
+            "objetivo do projeto",
+            "justificativa",
+            "mercado imobiliario",
+            "saneamento basico",
+        ],
+        "objetivo": [
+            "OBJETIVO",
+            "transformar dados urbanos",
+            "decisoes estrategicas",
+            "mercado imobiliario",
+        ],
+        "contexto": [
+            "CONTEXTO",
+            "cenario brasileiro",
+            "infraestrutura urbana",
+            "saneamento basico",
+            "IDH",
+            "valorizacao imobiliaria",
+        ],
+        "problema": [
+            "problema",
+            "desigualdade regional",
+            "infraestrutura precaria",
+            "falta de saneamento",
+            "decisoes sem dados estruturados",
+        ],
+        "justificativa": [
+            "JUSTIFICATIVA",
+            "importancia do projeto",
+            "tomada de decisao",
+            "dados urbanos",
+        ],
+        "escopo": [
+            "ESCOPO",
+            "limites",
+            "exclusoes",
+            "resultados esperados",
+        ],
+        "stakeholders": [
+            "STAKEHOLDERS",
+            "imobiliarias",
+            "construtoras",
+            "usuarios",
+            "mercado imobiliario",
+        ],
+        "integrantes": [
+            "Andre",
+            "Claudiana",
+            "Gabriel",
+            "Giovana",
+            "Joao",
+            "Rafael",
+        ],
+        "arquitetura": [
+            "ARQUITETURA TECNICA",
+            "docker",
+            "banco de dados",
+            "site institucional",
+            "java",
+            "rag",
+        ],
+    }
+
+    extras = []
+
+    if "easydata" in pergunta_lower or "projeto" in pergunta_lower:
+        extras.extend(mapa["easydata projeto"])
+
+    for chave, termos in mapa.items():
+        if chave in pergunta_lower:
+            extras.extend(termos)
+
+    if "integrantes" in pergunta_lower or "grupo" in pergunta_lower or "equipe" in pergunta_lower:
+        extras.extend(mapa["integrantes"])
+
+    if "stakeholder" in pergunta_lower or "publico" in pergunta_lower or "público" in pergunta_lower:
+        extras.extend(mapa["stakeholders"])
+
+    extras = list(dict.fromkeys(extras))
+
+    return pergunta + "\n" + "\n".join(extras)
+
+
+def chunk_ruim(texto):
+    texto_lower = texto.lower()
+
+    if "sumário" in texto_lower or "sumario" in texto_lower:
+        return True
+
+    if texto.count(".") > 20 and len(texto) < 800:
+        return True
+
+    if "são paulo" in texto_lower and "2026" in texto_lower and len(texto) < 400:
+        return True
+
+    return False
+
+
+def buscar_por_palavras(pergunta, limite=10):
+    consulta = expandir_pergunta(pergunta).lower()
+    termos = [
+        termo.strip()
+        for termo in consulta.replace("\n", " ").split()
+        if len(termo.strip()) > 3
+    ]
+
+    encontrados = []
+
+    for doc in todos_chunks:
+        texto_original = doc.page_content
+        texto = texto_original.lower()
+
+        if chunk_ruim(texto_original):
+            continue
+
+        pontuacao = sum(1 for termo in termos if termo in texto)
+
+        if pontuacao > 0:
+            encontrados.append((pontuacao, doc))
+
+    encontrados.sort(key=lambda item: item[0], reverse=True)
+
+    return [doc for _, doc in encontrados[:limite]]
+
+
+def montar_contexto(pergunta):
+    consulta = expandir_pergunta(pergunta)
+
+    resultados_palavras = buscar_por_palavras(pergunta, limite=10)
+    resultados_vetor = vector_db.similarity_search(consulta, k=8)
+
+    resultados = []
+    vistos = set()
+
+    for doc in resultados_palavras + resultados_vetor:
+        if chunk_ruim(doc.page_content):
+            continue
+
+        chave = (
+            doc.metadata.get("arquivo", ""),
+            doc.metadata.get("pagina", ""),
+            doc.page_content[:80],
+        )
+
+        if chave not in vistos:
+            vistos.add(chave)
+            resultados.append(doc)
+
+    contexto = []
+    fontes = []
+
+    for doc in resultados:
+        metadata = doc.metadata
+
+        fonte = {
+            "arquivo": metadata.get("arquivo", metadata.get("source", "")),
+            "pagina": metadata.get("pagina", metadata.get("page", "")),
+        }
+
+        if fonte not in fontes:
+            fontes.append(fonte)
+
+        contexto.append(doc.page_content)
+
+    texto_contexto = "\n\n".join(contexto)
+
+    print("Fontes usadas:", fontes[:3])
+    print("Trecho de contexto:", texto_contexto[:1000])
+
+    return texto_contexto[:7000], fontes[:3]
+
+
+def gerar_resposta(pergunta, contexto):
+    if not contexto or len(contexto.strip()) < 50:
+        return "Nao encontrei essa informacao na documentacao do projeto."
+
+    prompt = f"""
+Voce e o Assistente EasyData, chatbot do site institucional da EasyData.
+
+Responda em portugues do Brasil, de forma clara e objetiva.
+Use somente as informacoes do contexto abaixo.
+
+Se a pergunta for "O que e a EasyData?", explique o projeto com base no objetivo,
+contexto, descricao, justificativa e resultados esperados encontrados no contexto.
+
+Nao invente dados fora do contexto.
+Nao diga que nao encontrou se o contexto tiver qualquer trecho util sobre a EasyData.
+
+Contexto:
+{contexto}
+
+Pergunta:
+{pergunta}
+
+Resposta:
+"""
+
+    resposta = llm.invoke(prompt)
+    return resposta.content
+
+
 try:
-    montar_rag()
+    iniciar_rag()
 except Exception as e:
     print(f"ERRO CRITICO NA INICIALIZACAO: {str(e)}")
 
@@ -153,7 +329,7 @@ except Exception as e:
 @app.get("/")
 def home():
     return {
-        "status": "Online" if qa_chain else "Sistema nao inicializado",
+        "status": "Online" if vector_db and llm else "Sistema nao inicializado",
         "documentos": documentos_carregados,
         "chunks": total_chunks,
         "ollama": OLLAMA_BASE_URL,
@@ -164,29 +340,30 @@ def home():
 
 @app.get("/ask")
 async def ask(question: str):
-    if qa_chain is None:
+    if vector_db is None or llm is None:
         return {"erro": "O sistema nao foi inicializado."}
 
     if not question or not question.strip():
         return {"erro": "Envie uma pergunta valida."}
 
-    try:
-        print(f"Pergunta recebida: {question}")
-        result = qa_chain.invoke({"input": question})
+    pergunta = question.strip()
+    pergunta_normalizada = pergunta.lower()
 
-        fontes = []
-        for doc in result.get("context", []):
-            metadata = doc.metadata
-            fonte = {
-                "arquivo": metadata.get("arquivo", metadata.get("source", "")),
-                "pagina": metadata.get("pagina", metadata.get("page", "")),
-            }
-            if fonte not in fontes:
-                fontes.append(fonte)
+    if pergunta_normalizada in ["oi", "ola", "olá", "bom dia", "boa tarde", "boa noite"]:
+        return {
+            "resposta": "Olá! Sou o Assistente EasyData. Posso responder perguntas sobre o projeto EasyData, saneamento, objetivo, contexto, integrantes e documentação.",
+            "fontes": [],
+        }
+
+    try:
+        print(f"Pergunta recebida: {pergunta}")
+
+        contexto, fontes = montar_contexto(pergunta)
+        resposta = gerar_resposta(pergunta, contexto)
 
         return {
-            "resposta": result.get("answer", ""),
-            "fontes": fontes[:3],
+            "resposta": resposta,
+            "fontes": fontes,
         }
 
     except Exception as e:
