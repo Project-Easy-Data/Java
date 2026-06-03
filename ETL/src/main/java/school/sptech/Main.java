@@ -2,40 +2,40 @@ package school.sptech;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import school.sptech.service.DadosSaneamentoService;
-import school.sptech.service.DadosSaneamentoService.ResultadoCarregamento;
+import school.sptech.config.DBConexao;
+import school.sptech.service.BaseService;
 
 import java.io.FileInputStream;
 import java.io.InputStream;
 
 public class Main {
-    private static final Logger log = LoggerFactory.getLogger(Main.class);
+    public static final Logger log = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) {
         try {
-            
-            InputStream base01 = new FileInputStream("/home/andre/Downloads/municipio_saneamento_atualizado.xlsx");
-            InputStream base02 = new FileInputStream("/home/andre/Downloads/br_mdr_snis_municipio_agua_esgoto_atualizado.xlsx");
+            // LOCAL
+            String pathBase01 = System.getenv().getOrDefault(
+                    "BASE01_PATH",
+                    "/home/andre/Downloads/municipio_saneamento_atualizado.xlsx"
+            );
+            InputStream base01 = new FileInputStream(pathBase01);
 
-            log.info("Carregando bases...");
-            ResultadoCarregamento resultado = DadosSaneamentoService.carregarTodasBases(base01, base02);
+            // AWS
+            // S3Service s3Service = new S3Service();
+            // InputStream base01 = s3Service.obterArquivo("municipio_saneamento_atualizado.xlsx");
 
-            log.info("Municípios carregados: {}", resultado.mapaMunicipios.size());
-            log.info("Registros de saneamento: {}", resultado.dadosSaneamento.size());
+            DBConexao db = new DBConexao();
 
-            resultado.dadosSaneamento.stream()
-                    .limit(5)
-                    .forEach(d -> System.out.println(
-                            "Ano: " + d.getAnoReferencia() +
-                                    " | Cidade: " + d.getMunicipio().getNome() +
-                                    " | UF: " + d.getMunicipio().getUf().getSigla() +
-                                    " | Água: " + d.getAgua() +
-                                    " | Esgoto: " + d.getEsgoto() +
-                                    " | Resíduos: " + d.getResiduos() +
-                                    " | Drenagem: " + d.getDrenagem()
-                    ));
+            log.info("Carregando base...");
+            Long inicio = System.currentTimeMillis();
 
-            log.info("Teste concluído com sucesso!");
+            BaseService service = new BaseService(db.getConexao());
+            service.processar(base01);
+
+            Long fim = System.currentTimeMillis();
+            Long tempoTotal = fim - inicio;
+
+            log.info("ETL concluído em {} segundos!", tempoTotal / 1000);
         } catch (Exception e) {
             log.error("Erro: ", e);
         }
