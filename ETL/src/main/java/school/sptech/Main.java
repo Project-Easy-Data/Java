@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import school.sptech.config.DBConexao;
 import school.sptech.service.BaseService;
+import school.sptech.service.S3Service;
 
 import java.io.FileInputStream;
 import java.io.InputStream;
@@ -14,15 +15,15 @@ public class Main {
     public static void main(String[] args) {
         try {
             // LOCAL
-            String pathBase01 = System.getenv().getOrDefault(
-                    "BASE01_PATH",
-                    "/home/andre/Downloads/municipio_saneamento_atualizado.xlsx"
-            );
-            InputStream base01 = new FileInputStream(pathBase01);
+            //String pathBase01 = System.getenv().getOrDefault(
+            //        "BASE01_PATH",
+            //        "/home/andre/Downloads/municipio_saneamento_atualizado.xlsx"
+            //);
+            //InputStream base01 = new FileInputStream(pathBase01);
 
             // AWS
-            // S3Service s3Service = new S3Service();
-            // InputStream base01 = s3Service.obterArquivo("municipio_saneamento_atualizado.xlsx");
+            S3Service s3Service = new S3Service();
+            InputStream base01 = s3Service.obterArquivo("municipio_saneamento_atualizado.xlsx");
 
             DBConexao db = new DBConexao();
 
