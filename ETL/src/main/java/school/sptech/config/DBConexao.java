@@ -10,16 +10,16 @@ public class DBConexao {
     public DBConexao() {
         BasicDataSource ds = new BasicDataSource();
         // CONTAINER
-        //String url = System.getenv().getOrDefault(
-        //        "DB_URL",
-        //        "jdbc:mysql://container-banco:3306/EasyData?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true"
-        //);
-
-        //LOCAL
         String url = System.getenv().getOrDefault(
                 "DB_URL",
-                "jdbc:mysql://localhost:3306/EasyData?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true"
+                "jdbc:mysql://container-banco:3306/EasyData?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true"
         );
+
+        //LOCAL
+        //String url = System.getenv().getOrDefault(
+        //        "DB_URL",
+        //        "jdbc:mysql://localhost:3306/EasyData?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true"
+        //);
 
         String user = System.getenv().getOrDefault("DB_USER", "Easy");
         String password = System.getenv().getOrDefault("DB_PASSWORD", "Easydata@2026");
