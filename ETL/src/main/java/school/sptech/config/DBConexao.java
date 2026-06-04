@@ -15,6 +15,7 @@ public class DBConexao {
                 "jdbc:mysql://container-banco:3306/EasyData?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true"
         );
 
+
         //LOCAL
         //String url = System.getenv().getOrDefault(
         //        "DB_URL",

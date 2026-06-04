@@ -21,18 +21,18 @@ public class BaseService {
     public BaseService(DataSource dataSource) {
         this.jdbc = new JdbcTemplate(dataSource);
 
-        jdbc.execute("DROP TABLE IF EXISTS dados_saneamento");
-        jdbc.execute("DROP TABLE IF EXISTS municipio");
-        jdbc.execute("DROP TABLE IF EXISTS unidade_federativa");
+        jdbc.execute("DROP TABLE IF EXISTS Dados_Saneamento");
+        jdbc.execute("DROP TABLE IF EXISTS Municipio");
+        jdbc.execute("DROP TABLE IF EXISTS Unidade_Federativa");
 
-        jdbc.execute("CREATE TABLE unidade_federativa (" +
+        jdbc.execute("CREATE TABLE Unidade_Federativa (" +
                 "id    INT AUTO_INCREMENT PRIMARY KEY, " +
                 "codigo INT, " +
                 "nome  VARCHAR(100) NOT NULL, " +
                 "sigla VARCHAR(2) NOT NULL UNIQUE" +
                 ")");
 
-        jdbc.execute("CREATE TABLE municipio (" +
+        jdbc.execute("CREATE TABLE Municipio (" +
                 "id               INT AUTO_INCREMENT PRIMARY KEY, " +
                 "codigo_ibge      INT NOT NULL UNIQUE, " +
                 "nome             VARCHAR(150) NOT NULL, " +
@@ -41,10 +41,10 @@ public class BaseService {
                 "populacao_urbana INT, " +
                 "populacao_rural  INT, " +
                 "regiao           VARCHAR(50), " +
-                "FOREIGN KEY (sigla_uf) REFERENCES unidade_federativa(sigla)" +
+                "FOREIGN KEY (sigla_uf) REFERENCES Unidade_Federativa(sigla)" +
                 ")");
 
-        jdbc.execute("CREATE TABLE dados_saneamento (" +
+        jdbc.execute("CREATE TABLE Dados_Saneamento (" +
                 "id                       INT AUTO_INCREMENT PRIMARY KEY, " +
                 "id_municipio             INT NOT NULL UNIQUE, " +
                 "agua_urbana              INT, " +
@@ -59,15 +59,24 @@ public class BaseService {
                 "eventos_inundacao        INT, " +
                 "sistema_alerta           BOOLEAN, " +
                 "indice_drenagem          DOUBLE, " +
-                "FOREIGN KEY (id_municipio) REFERENCES municipio(id)" +
+                "FOREIGN KEY (id_municipio) REFERENCES Municipio(id)" +
                 ")");
 
+        jdbc.execute("CREATE TABLE IF NOT EXISTS Log (" +
+                "id INT AUTO_INCREMENT PRIMARY KEY," +
+                "data DATETIME DEFAULT NOW()," +
+                "tipo VARCHAR(45)," +
+                "motivo VARCHAR(255)" +
+                ");");
+
         log.info("Tabelas criadas com sucesso.");
+        salvarLog("SUCESSO", "Tabelas criadas com sucesso.");
     }
 
     public void processar(InputStream inputStream) throws Exception {
         IOUtils.setByteArrayMaxOverride(500_000_000);
         log.info("Iniciando leitura da planilha...");
+        salvarLog("INFO", "Iniciando leitura da planilha...");
 
         try (Workbook workbook = WorkbookFactory.create(inputStream)) {
             Sheet sheet = workbook.getSheetAt(0);
@@ -81,6 +90,7 @@ public class BaseService {
                         cab.put(cell.toString().trim(), cell.getColumnIndex());
                     }
                     log.info("Cabeçalho lido. Colunas encontradas: {}", cab.size());
+                    salvarLog("INFO", "Cabeçalho lido. Colunas encontradas: " + cab.size());
                     continue;
                 }
 
@@ -132,12 +142,12 @@ public class BaseService {
                 );
 
                 // Inserindo no banco
-                jdbc.update("INSERT IGNORE INTO unidade_federativa (codigo, nome, sigla) VALUES (?, ?, ?)",
+                jdbc.update("INSERT IGNORE INTO Unidade_Federativa (codigo, nome, sigla) VALUES (?, ?, ?)",
                         uf.getCodigo(),
                         uf.getNome(),
                         uf.getSigla());
 
-                jdbc.update("INSERT IGNORE INTO municipio (codigo_ibge, nome, sigla_uf, populacao_total, populacao_urbana, populacao_rural, regiao) " +
+                jdbc.update("INSERT IGNORE INTO Municipio (codigo_ibge, nome, sigla_uf, populacao_total, populacao_urbana, populacao_rural, regiao) " +
                                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                         municipio.getCodigo(),
                         municipio.getNome(),
@@ -148,10 +158,10 @@ public class BaseService {
                         municipio.getRegiao());
 
                 Integer idMunicipio = jdbc.queryForObject(
-                        "SELECT id FROM municipio WHERE codigo_ibge = ?",
+                        "SELECT id FROM Municipio WHERE codigo_ibge = ?",
                         Integer.class, municipio.getCodigo());
 
-                jdbc.update("INSERT IGNORE INTO dados_saneamento " +
+                jdbc.update("INSERT IGNORE INTO Dados_Saneamento " +
                                 "(id_municipio, agua_urbana, agua_rural, esgoto_urbano, esgoto_rural, " +
                                 "residuos_urbano, residuos_rural, cobertura_redes_pluviais, cobertura_pavimentacao, " +
                                 "parcela_domicilios_risco, eventos_inundacao, sistema_alerta, indice_drenagem) " +
@@ -174,10 +184,12 @@ public class BaseService {
 
                 if (inseridos % 500 == 0) {
                     log.info("Registros inseridos até agora: {}", inseridos);
+                    salvarLog("INFO", "Registros inseridos até agora: " + inseridos);
                 }
             }
 
-            log.info("Fim da planilha. Total inserido: {}", inseridos);
+            log.info("Fim da planilha. Total de linhas inseridas: {}", inseridos);
+            salvarLog("SUCESSO", "Fim da planilha. Total de linhas inseridas: " + inseridos);
         }
     }
 
@@ -200,5 +212,11 @@ public class BaseService {
         if (s == null || s.isEmpty()) return 0.0;
         try { return Double.parseDouble(s.replace(",", ".")); }
         catch (NumberFormatException e) { return 0.0; }
+    }
+
+    public void salvarLog(String tipo, String motivo) {
+        jdbc.update(
+                "INSERT INTO Log (tipo, motivo) VALUES (?, ?)", tipo, motivo
+        );
     }
 }
