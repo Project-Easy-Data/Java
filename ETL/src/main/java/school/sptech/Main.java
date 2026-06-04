@@ -13,6 +13,9 @@ public class Main {
     public static final Logger log = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) {
+        DBConexao db = new DBConexao();
+        BaseService service = new BaseService(db.getConexao());
+
         try {
             // LOCAL
             //String pathBase01 = System.getenv().getOrDefault(
@@ -21,24 +24,28 @@ public class Main {
             //);
             //InputStream base01 = new FileInputStream(pathBase01);
 
+
             // AWS
             S3Service s3Service = new S3Service();
             InputStream base01 = s3Service.obterArquivo("municipio_saneamento_atualizado.xlsx");
 
-            DBConexao db = new DBConexao();
 
             log.info("Carregando base...");
+            service.salvarLog("INFO", "Carregando base...");
+
             Long inicio = System.currentTimeMillis();
 
-            BaseService service = new BaseService(db.getConexao());
             service.processar(base01);
 
             Long fim = System.currentTimeMillis();
             Long tempoTotal = fim - inicio;
 
             log.info("ETL concluído em {} segundos!", tempoTotal / 1000);
+            service.salvarLog("INFO", "ETL concluído em " + tempoTotal / 1000 + " segundos!");
         } catch (Exception e) {
             log.error("Erro: ", e);
+            service.salvarLog("ERRO", "Erro: " + e.getMessage());
+
         }
     }
 }
