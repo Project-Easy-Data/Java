@@ -147,6 +147,38 @@ def resposta_integrantes():
     return "A equipe do projeto EasyData possui 6 integrantes:\n\n" + nomes
 
 
+def pergunta_sobre_base_dados(pergunta):
+    p = normalizar(pergunta)
+    palavras = [
+        "base de dados",
+        "dados utilizados",
+        "dataset",
+        "fonte dos dados",
+        "de onde vem os dados",
+        "de onde pegamos os dados",
+        "qual base",
+        "snis",
+        "base dos dados",
+    ]
+    return any(palavra in p for palavra in palavras)
+
+
+def resposta_base_dados():
+    return (
+        "A base de dados utilizada no projeto EasyData é o SNIS, "
+        "Sistema Nacional de Informações sobre Saneamento.\n\n"
+        "Nós acessamos essa base pela plataforma Base dos Dados, no conjunto "
+        "'Sistema Nacional de Informações sobre Saneamento (SNIS)'.\n\n"
+        "O SNIS reúne informações públicas sobre saneamento básico no Brasil, "
+        "incluindo dados relacionados a água, esgoto, resíduos sólidos e drenagem. "
+        "Esses dados são coletados junto aos municípios e prestadores de serviços "
+        "de saneamento.\n\n"
+        "Link da base utilizada: "
+        "https://basedosdados.org/dataset/2a543ad8-3cdb-4047-9498-efe7fb8ed697"
+        "?table=df7cf198-4889-4baf-bb77-4e0e28eb90ca"
+    )
+
+
 def pergunta_saudacao(pergunta):
     p = normalizar(pergunta)
     return p in ["oi", "ola", "olá", "bom dia", "boa tarde", "boa noite"]
@@ -270,7 +302,7 @@ async def ask(question: str):
 
     if pergunta_saudacao(pergunta):
         return {
-            "resposta": "Ola! Sou o Assistente EasyData. Posso responder perguntas sobre o projeto EasyData, objetivo, contexto, justificativa, saneamento e integrantes.",
+            "resposta": "Ola! Sou o Assistente EasyData. Posso responder perguntas sobre o projeto EasyData, objetivo, contexto, justificativa, saneamento, integrantes e base de dados utilizada.",
             "fontes": [],
         }
 
@@ -281,6 +313,17 @@ async def ask(question: str):
                 {
                     "arquivo": "Documentacao_RAG_EasyData_Resumida.pdf",
                     "pagina": 1,
+                }
+            ],
+        }
+
+    if pergunta_sobre_base_dados(pergunta):
+        return {
+            "resposta": resposta_base_dados(),
+            "fontes": [
+                {
+                    "arquivo": "Base dos Dados - SNIS",
+                    "pagina": "https://basedosdados.org/dataset/2a543ad8-3cdb-4047-9498-efe7fb8ed697?table=df7cf198-4889-4baf-bb77-4e0e28eb90ca",
                 }
             ],
         }
