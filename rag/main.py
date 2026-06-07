@@ -1,5 +1,6 @@
 import os
 import shutil
+import unicodedata
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -26,14 +27,29 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
 OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 OLLAMA_CHAT_MODEL = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2:1b")
 CHROMA_DIR = os.getenv("CHROMA_DIR", "./db_local")
-RAG_DOCUMENTOS = os.getenv("RAG_DOCUMENTOS", "DocumentacaoGrupo2_atualizada.pdf")
+RAG_DOCUMENTOS = os.getenv("RAG_DOCUMENTOS", "Documentacao_RAG_EasyData_Resumida.pdf")
 RECRIAR_DB = os.getenv("RAG_RECRIAR_DB", "true").lower() == "true"
 
 vector_db = None
 llm = None
 documentos_carregados = []
 total_chunks = 0
-todos_chunks = []
+
+INTEGRANTES_EASYDATA = [
+    "Andre Luis Costa Santos",
+    "Claudiana dos Santos",
+    "Gabriel Adryan de Toledo Sacchi",
+    "Giovana Querobino Branquinho",
+    "Joao Vitor Gomes De Melo",
+    "Rafael Prazeres Calderon",
+]
+
+
+def normalizar(texto):
+    texto = texto.lower().strip()
+    texto = unicodedata.normalize("NFD", texto)
+    texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
+    return texto
 
 
 def listar_documentos():
@@ -64,7 +80,7 @@ def carregar_documentos():
 
 
 def iniciar_rag():
-    global vector_db, llm, total_chunks, todos_chunks
+    global vector_db, llm, total_chunks
 
     print(">>> Iniciando RAG EasyData com Ollama <<<")
 
@@ -75,13 +91,12 @@ def iniciar_rag():
         return
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=250,
-        chunk_overlap=30,
+        chunk_size=450,
+        chunk_overlap=80,
         separators=["\n\n", "\n", ".", "!", "?", ";", ",", " ", ""],
     )
 
     chunks = splitter.split_documents(documentos)
-    todos_chunks = chunks
     total_chunks = len(chunks)
 
     if RECRIAR_DB and Path(CHROMA_DIR).exists():
@@ -106,166 +121,67 @@ def iniciar_rag():
     llm = ChatOllama(
         model=OLLAMA_CHAT_MODEL,
         base_url=OLLAMA_BASE_URL,
-        temperature=0.2,
+        temperature=0.0,
     )
 
     print("--- TUDO PRONTO: Sistema de busca ativo! ---")
 
 
+def pergunta_sobre_integrantes(pergunta):
+    p = normalizar(pergunta)
+    palavras = [
+        "integrantes",
+        "membros",
+        "equipe",
+        "grupo",
+        "quem faz parte",
+        "quem sao os membros",
+        "quem e a equipe",
+        "participantes",
+    ]
+    return any(palavra in p for palavra in palavras)
+
+
+def resposta_integrantes():
+    nomes = "\n".join([f"- {nome}" for nome in INTEGRANTES_EASYDATA])
+    return "A equipe do projeto EasyData possui 6 integrantes:\n\n" + nomes
+
+
+def pergunta_saudacao(pergunta):
+    p = normalizar(pergunta)
+    return p in ["oi", "ola", "olá", "bom dia", "boa tarde", "boa noite"]
+
+
 def expandir_pergunta(pergunta):
-    pergunta_lower = pergunta.lower()
-
-    mapa = {
-        "easydata projeto": [
-            "EasyData Inteligencia Urbana em Saneamento",
-            "descricao do projeto",
-            "objetivo do projeto",
-            "justificativa",
-            "mercado imobiliario",
-            "saneamento basico",
-        ],
-        "objetivo": [
-            "OBJETIVO",
-            "transformar dados urbanos",
-            "decisoes estrategicas",
-            "mercado imobiliario",
-        ],
-        "contexto": [
-            "CONTEXTO",
-            "cenario brasileiro",
-            "infraestrutura urbana",
-            "saneamento basico",
-            "IDH",
-            "valorizacao imobiliaria",
-        ],
-        "problema": [
-            "problema",
-            "desigualdade regional",
-            "infraestrutura precaria",
-            "falta de saneamento",
-            "decisoes sem dados estruturados",
-        ],
-        "justificativa": [
-            "JUSTIFICATIVA",
-            "importancia do projeto",
-            "tomada de decisao",
-            "dados urbanos",
-        ],
-        "escopo": [
-            "ESCOPO",
-            "limites",
-            "exclusoes",
-            "resultados esperados",
-        ],
-        "stakeholders": [
-            "STAKEHOLDERS",
-            "imobiliarias",
-            "construtoras",
-            "usuarios",
-            "mercado imobiliario",
-        ],
-        "integrantes": [
-            "Andre",
-            "Claudiana",
-            "Gabriel",
-            "Giovana",
-            "Joao",
-            "Rafael",
-        ],
-        "arquitetura": [
-            "ARQUITETURA TECNICA",
-            "docker",
-            "banco de dados",
-            "site institucional",
-            "java",
-            "rag",
-        ],
-    }
-
+    p = normalizar(pergunta)
     extras = []
 
-    if "easydata" in pergunta_lower or "projeto" in pergunta_lower:
-        extras.extend(mapa["easydata projeto"])
+    if "easydata" in p or "projeto" in p:
+        extras.append(
+            "EasyData Inteligencia Urbana em Saneamento objetivo contexto justificativa mercado imobiliario saneamento basico"
+        )
 
-    for chave, termos in mapa.items():
-        if chave in pergunta_lower:
-            extras.extend(termos)
+    if "objetivo" in p:
+        extras.append(
+            "objetivo coletar organizar tratar apresentar dados publicos saneamento basico municipios brasileiros"
+        )
 
-    if "integrantes" in pergunta_lower or "grupo" in pergunta_lower or "equipe" in pergunta_lower:
-        extras.extend(mapa["integrantes"])
+    if "contexto" in p:
+        extras.append(
+            "contexto saneamento basico municipios brasileiros infraestrutura urbana mercado imobiliario"
+        )
 
-    if "stakeholder" in pergunta_lower or "publico" in pergunta_lower or "público" in pergunta_lower:
-        extras.extend(mapa["stakeholders"])
-
-    extras = list(dict.fromkeys(extras))
+    if "justificativa" in p:
+        extras.append(
+            "justificativa dados publicos saneamento basico auxiliar construtoras imobiliarias decisao estrategica"
+        )
 
     return pergunta + "\n" + "\n".join(extras)
 
 
-def chunk_ruim(texto):
-    texto_lower = texto.lower()
-
-    if "sumário" in texto_lower or "sumario" in texto_lower:
-        return True
-
-    if texto.count(".") > 20 and len(texto) < 800:
-        return True
-
-    if "são paulo" in texto_lower and "2026" in texto_lower and len(texto) < 400:
-        return True
-
-    return False
-
-
-def buscar_por_palavras(pergunta, limite=10):
-    consulta = expandir_pergunta(pergunta).lower()
-    termos = [
-        termo.strip()
-        for termo in consulta.replace("\n", " ").split()
-        if len(termo.strip()) > 3
-    ]
-
-    encontrados = []
-
-    for doc in todos_chunks:
-        texto_original = doc.page_content
-        texto = texto_original.lower()
-
-        if chunk_ruim(texto_original):
-            continue
-
-        pontuacao = sum(1 for termo in termos if termo in texto)
-
-        if pontuacao > 0:
-            encontrados.append((pontuacao, doc))
-
-    encontrados.sort(key=lambda item: item[0], reverse=True)
-
-    return [doc for _, doc in encontrados[:limite]]
-
-
 def montar_contexto(pergunta):
     consulta = expandir_pergunta(pergunta)
-
-    resultados_palavras = buscar_por_palavras(pergunta, limite=10)
-    resultados_vetor = vector_db.similarity_search(consulta, k=8)
-
-    resultados = []
-    vistos = set()
-
-    for doc in resultados_palavras + resultados_vetor:
-        if chunk_ruim(doc.page_content):
-            continue
-
-        chave = (
-            doc.metadata.get("arquivo", ""),
-            doc.metadata.get("pagina", ""),
-            doc.page_content[:80],
-        )
-
-        if chave not in vistos:
-            vistos.add(chave)
-            resultados.append(doc)
+    resultados = vector_db.similarity_search(consulta, k=6)
 
     contexto = []
     fontes = []
@@ -281,31 +197,35 @@ def montar_contexto(pergunta):
         if fonte not in fontes:
             fontes.append(fonte)
 
-        contexto.append(doc.page_content)
+        texto = doc.page_content.strip()
+        if texto:
+            contexto.append(texto)
 
     texto_contexto = "\n\n".join(contexto)
 
-    print("Fontes usadas:", fontes[:3])
-    print("Trecho de contexto:", texto_contexto[:1000])
+    print(f"Fontes usadas: {fontes[:3]}")
+    print(f"Trecho de contexto: {texto_contexto[:800]}")
 
-    return texto_contexto[:7000], fontes[:3]
+    return texto_contexto[:4500], fontes[:3]
 
 
 def gerar_resposta(pergunta, contexto):
-    if not contexto or len(contexto.strip()) < 50:
+    if not contexto.strip():
         return "Nao encontrei essa informacao na documentacao do projeto."
 
     prompt = f"""
 Voce e o Assistente EasyData, chatbot do site institucional da EasyData.
 
-Responda em portugues do Brasil, de forma clara e objetiva.
+Responda em portugues do Brasil, de forma clara, objetiva e amigavel.
 Use somente as informacoes do contexto abaixo.
+Nao invente nomes, numeros, cargos, liderancas, tecnologias ou promessas.
+Se a resposta nao estiver no contexto, diga apenas:
+"Nao encontrei essa informacao na documentacao do projeto."
 
-Se a pergunta for "O que e a EasyData?", explique o projeto com base no objetivo,
-contexto, descricao, justificativa e resultados esperados encontrados no contexto.
-
-Nao invente dados fora do contexto.
-Nao diga que nao encontrou se o contexto tiver qualquer trecho util sobre a EasyData.
+Atencao:
+- A equipe EasyData tem exatamente 6 integrantes.
+- Nao separe "Joao Vitor Gomes De Melo" em duas pessoas.
+- Nao diga que existe lider da equipe, a menos que isso esteja explicitamente no contexto.
 
 Contexto:
 {contexto}
@@ -317,7 +237,7 @@ Resposta:
 """
 
     resposta = llm.invoke(prompt)
-    return resposta.content
+    return resposta.content.strip()
 
 
 try:
@@ -347,12 +267,22 @@ async def ask(question: str):
         return {"erro": "Envie uma pergunta valida."}
 
     pergunta = question.strip()
-    pergunta_normalizada = pergunta.lower()
 
-    if pergunta_normalizada in ["oi", "ola", "olá", "bom dia", "boa tarde", "boa noite"]:
+    if pergunta_saudacao(pergunta):
         return {
-            "resposta": "Olá! Sou o Assistente EasyData. Posso responder perguntas sobre o projeto EasyData, saneamento, objetivo, contexto, integrantes e documentação.",
+            "resposta": "Ola! Sou o Assistente EasyData. Posso responder perguntas sobre o projeto EasyData, objetivo, contexto, justificativa, saneamento e integrantes.",
             "fontes": [],
+        }
+
+    if pergunta_sobre_integrantes(pergunta):
+        return {
+            "resposta": resposta_integrantes(),
+            "fontes": [
+                {
+                    "arquivo": "Documentacao_RAG_EasyData_Resumida.pdf",
+                    "pagina": 1,
+                }
+            ],
         }
 
     try:
