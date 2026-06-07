@@ -60,7 +60,15 @@ public class Slack {
                 Connection conexao = DriverManager.getConnection(urlConexao, usuario, senha);
                 Statement comando = conexao.createStatement()
         ) {
-            String sql = "SELECT id, data, tipo, motivo FROM Log ORDER BY id LIMIT 15";
+            String sql = "SELECT *\n" +
+                    "FROM (\n" +
+                    "    SELECT id, data, tipo, motivo\n" +
+                    "    FROM Log\n" +
+                    "    ORDER BY id DESC\n" +
+                    "    LIMIT 15\n" +
+                    ") ultimos\n" +
+                    "ORDER BY id ASC;";
+            
             ResultSet resultado = comando.executeQuery(sql);
 
             StringBuilder mensagemSlack = new StringBuilder();
