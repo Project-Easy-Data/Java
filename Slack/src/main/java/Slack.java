@@ -47,7 +47,41 @@ public class Slack {
         }
     }
 
+    private static boolean verificarStatusSlack() {
+        try {
+            String urlStatus = System.getenv().getOrDefault(
+                    "BACKEND_URL",
+                    "http://app:3000"
+            ) + "/slack/status";
+
+            HttpClient cliente = HttpClient.newHttpClient();
+            HttpRequest requisicao = HttpRequest.newBuilder()
+                    .uri(URI.create(urlStatus))
+                    .GET()
+                    .build();
+
+            HttpResponse<String> resposta = cliente.send(
+                    requisicao,
+                    HttpResponse.BodyHandlers.ofString()
+            );
+
+            if (resposta.statusCode() == 200) {
+                String body = resposta.body();
+                return body.contains("\"ativo\":true");
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao verificar status do Slack: " + e.getMessage());
+        }
+        return true; // Por padrão, assume que está ativo se não conseguir verificar
+    }
+
     public static void main(String[] args) {
+        // Verificar se o Slack está ativo antes de processar
+        if (!verificarStatusSlack()) {
+            System.out.println("Slack desativado pelo usuário. Ignorando envio de notificações.");
+            return;
+        }
+
         String urlConexao = System.getenv().getOrDefault(
                 "DB_URL",
                 "jdbc:mysql://container-banco:3306/EasyData?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true"
